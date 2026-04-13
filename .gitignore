@@ -4,6 +4,7 @@ logs/
 dataset/meta/
 outputs/
 wandb/
+*.pt
 
 # just temporary folder...
 temp/
