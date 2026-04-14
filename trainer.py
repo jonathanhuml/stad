@@ -8,6 +8,7 @@ import sys
 COMMANDS = {
     "preprocess": "data.preprocess_localize_mi",
     "mae": "training.train_mae",
+    "overfit-mae": "training.overfit_mae",
     "stad": "training.train_stad",
     "eval": "eval.eval_reconstruction",
 }

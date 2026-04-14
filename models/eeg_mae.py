@@ -29,6 +29,8 @@ class EEGMAE(nn.Module):
         decoder_depth: int = 4,
         decoder_num_heads: int = 8,
         mlp_ratio: float = 4.0,
+        encoder_mlp_ratio: float | None = None,
+        decoder_mlp_ratio: float | None = None,
         norm_pix_loss: bool = False,
     ) -> None:
         super().__init__()
@@ -41,6 +43,8 @@ class EEGMAE(nn.Module):
         self.embed_dim = embed_dim
         self.norm_pix_loss = norm_pix_loss
         self.num_patches = time_steps // patch_size
+        encoder_mlp_ratio = float(mlp_ratio if encoder_mlp_ratio is None else encoder_mlp_ratio)
+        decoder_mlp_ratio = float(mlp_ratio if decoder_mlp_ratio is None else decoder_mlp_ratio)
 
         self.patch_embed = PatchEmbed1D(
             in_chans=in_chans,
@@ -54,7 +58,7 @@ class EEGMAE(nn.Module):
             persistent=True,
         )
         self.blocks = nn.ModuleList(
-            [Block(embed_dim, num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)]
+            [Block(embed_dim, num_heads, mlp_ratio=encoder_mlp_ratio) for _ in range(depth)]
         )
         self.norm = nn.LayerNorm(embed_dim)
 
@@ -67,7 +71,7 @@ class EEGMAE(nn.Module):
         )
         self.decoder_blocks = nn.ModuleList(
             [
-                Block(decoder_embed_dim, decoder_num_heads, mlp_ratio=mlp_ratio)
+                Block(decoder_embed_dim, decoder_num_heads, mlp_ratio=decoder_mlp_ratio)
                 for _ in range(decoder_depth)
             ]
         )
@@ -236,4 +240,3 @@ class EEGMAE(nn.Module):
             latent=latent[:, 1:, :],
             mask=mask,
         )
-

@@ -5,12 +5,15 @@ from typing import Dict
 
 from models import EEGMAE, GaussianDiffusion, MTD, STAD, STC
 from utils.checkpointing import (
+    best_matching_state_dict_variant,
+    build_matching_state_dict,
     load_checkpoint,
-    load_matching_state_dict,
     maybe_download_checkpoint,
     strip_module_prefix,
     unwrap_state_dict,
 )
+
+KNOWN_DREAMDIFFUSION_RELEASE_ID = "1Ygplxe1TB68-aYu082bjc89nD8Ngklnc"
 
 
 def build_mae(config: Dict) -> EEGMAE:
@@ -33,6 +36,15 @@ def maybe_initialize_mae(mae: EEGMAE, config: Dict, logger=None) -> None:
                 checkpoint_path,
             )
         return
+    if (
+        logger is not None
+        and checkpoint_url
+        and KNOWN_DREAMDIFFUSION_RELEASE_ID in checkpoint_url
+        and not Path(checkpoint_path).exists()
+    ):
+        logger.warning(
+            "The configured DreamDiffusion URL points to the README release checkpoint. It contains the released DreamDiffusion EEG encoder inside a larger generation checkpoint, so the download is large and the MAE decoder will still initialize randomly."
+        )
 
     checkpoint = maybe_download_checkpoint(
         destination=checkpoint_path,
@@ -40,15 +52,56 @@ def maybe_initialize_mae(mae: EEGMAE, config: Dict, logger=None) -> None:
         overwrite=False,
     )
     payload = load_checkpoint(checkpoint)
-    state_dict = strip_module_prefix(unwrap_state_dict(payload))
-    missing, unexpected = load_matching_state_dict(mae, state_dict)
+    raw_state_dict = strip_module_prefix(unwrap_state_dict(payload))
+    state_dict, prefix, raw_match_count = best_matching_state_dict_variant(mae, raw_state_dict)
+    total = len(mae.state_dict())
+    compatible, missing, unexpected, adapted = build_matching_state_dict(mae, state_dict)
+    matched = len(compatible)
+    coverage = matched / max(total, 1)
+    if matched == 0:
+        if logger is not None:
+            logger.warning(
+                "No compatible MAE tensors were found in %s after extracting the checkpoint state dict. Skipping DreamDiffusion initialization.",
+                checkpoint,
+            )
+        return
+    if coverage < 0.1:
+        if logger is not None:
+            logger.warning(
+                "Checkpoint compatibility is too low to apply safely (%d/%d tensors matched, stripped_prefix=%r). Skipping DreamDiffusion initialization.",
+                raw_match_count,
+                total,
+                prefix,
+            )
+        return
+    mae.load_state_dict(compatible, strict=False)
     if logger is not None:
+        decoder_missing = sum(
+            1
+            for key in missing
+            if key.startswith("decoder_") or key.startswith("mask_token")
+        )
         logger.info(
-            "Loaded DreamDiffusion-style MAE weights from %s (missing=%d, unexpected=%d)",
+            "Loaded DreamDiffusion-style MAE weights from %s (matched=%d/%d, missing=%d, unexpected=%d, adapted=%d, stripped_prefix=%r, raw_match_count=%d)",
             checkpoint,
+            matched,
+            total,
             len(missing),
             len(unexpected),
+            len(adapted),
+            prefix,
+            raw_match_count,
         )
+        if decoder_missing:
+            logger.info(
+                "DreamDiffusion's public checkpoint initializes the MAE encoder path only; %d decoder-side tensors remain randomly initialized.",
+                decoder_missing,
+            )
+        if coverage < 0.25:
+            logger.warning(
+                "Checkpoint compatibility is low (%.1f%% of tensors matched). DreamDiffusion's released weights likely target a different EEG shape/config than this 256x1280 MAE.",
+                coverage * 100.0,
+            )
 
 
 def build_stad(config: Dict) -> STAD:

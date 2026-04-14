@@ -47,6 +47,12 @@ Pretrain the EEG MAE:
 python3 trainer.py mae --config configs/stad_localize_mi_scale4.yaml --device cuda
 ```
 
+Run a focused MAE overfit diagnostic on a tiny fixed train subset:
+
+```bash
+python3 trainer.py overfit-mae --config configs/stad_localize_mi_scale4.yaml --device cpu --subset-size 8 --steps 40
+```
+
 Train STAD:
 
 ```bash
@@ -74,7 +80,14 @@ The default configs point to:
 checkpoints/dreamdiffusion_mae_checkpoint.pth
 ```
 
-Set the URL once you have the official DreamDiffusion checkpoint location you want to use.
+The main scale configs now also include the DreamDiffusion README checkpoint URL directly, so the loader can fetch it automatically on first use.
+
+Important:
+
+- the DreamDiffusion README exposes a released checkpoint, but its original EEG encoder setup does not obviously match this repo's `256 x 1280` MAE
+- loading is therefore best-effort and partial
+- the loader now reports how many tensors actually matched so you can see whether the initialization is meaningful or mostly incompatible
+- the public DreamDiffusion release initializes the MAE encoder path; decoder-side MAE weights are still learned in this repo
 
 ## Notes On Faithfulness
 

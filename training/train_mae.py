@@ -8,6 +8,7 @@ import torch
 from data import build_dataloaders, build_dataset_report, load_localize_mi_config
 from training.factory import build_mae, maybe_initialize_mae
 from training.losses import masked_reconstruction_loss
+from training.metrics import reconstruction_metrics
 from utils.checkpointing import save_checkpoint
 from utils.logging import setup_logger, write_json
 from utils.seed import seed_everything
@@ -24,6 +25,25 @@ def evaluate_mae(model, loader, device, mask_ratio: float) -> float:
             total_loss += float(output.loss.item())
             total_batches += 1
     return total_loss / max(total_batches, 1)
+
+
+def build_probe_batch(dataset, max_items: int) -> torch.Tensor | None:
+    count = min(len(dataset), max_items)
+    if count <= 0:
+        return None
+    return torch.stack([dataset[index]["hr_eeg"] for index in range(count)], dim=0)
+
+
+@torch.no_grad()
+def evaluate_probe_reconstruction(model, probe_batch: torch.Tensor | None, device) -> dict[str, float] | None:
+    if probe_batch is None:
+        return None
+    model.eval()
+    hr_eeg = probe_batch.to(device)
+    output = model(hr_eeg, mask_ratio=0.0)
+    metrics = reconstruction_metrics(output.reconstruction, hr_eeg)
+    metrics["loss"] = float(output.loss.item())
+    return metrics
 
 
 def main() -> None:
@@ -48,6 +68,7 @@ def main() -> None:
     loaders = build_dataloaders(config)
     model = build_mae(config).to(device)
     maybe_initialize_mae(model, config, logger=logger)
+    probe_batch = build_probe_batch(loaders["train"].dataset, max_items=int(config["eval"]["batch_size"]))
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -77,7 +98,21 @@ def main() -> None:
 
         train_loss = running_loss / max(num_batches, 1)
         val_loss = evaluate_mae(model, loaders["val"], device, mask_ratio=mask_ratio)
-        logger.info("epoch=%d train_loss=%.6f val_loss=%.6f", epoch, train_loss, val_loss)
+        probe_metrics = evaluate_probe_reconstruction(model, probe_batch, device)
+        if probe_metrics is None:
+            logger.info("epoch=%d train_loss=%.6f val_loss=%.6f", epoch, train_loss, val_loss)
+        else:
+            logger.info(
+                "epoch=%d train_loss=%.6f val_loss=%.6f probe_loss=%.6f probe_pcc=%.6f probe_nmse=%.6f probe_snr_db=%.6f probe_mae=%.6f",
+                epoch,
+                train_loss,
+                val_loss,
+                probe_metrics["loss"],
+                probe_metrics["pcc"],
+                probe_metrics["nmse"],
+                probe_metrics["snr_db"],
+                probe_metrics["mae"],
+            )
 
         payload = {
             "model": model.state_dict(),
@@ -96,4 +131,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
