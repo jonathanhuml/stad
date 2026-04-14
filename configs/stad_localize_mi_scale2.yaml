@@ -1,0 +1,73 @@
+{
+  "experiment": {
+    "name": "stad_localize_mi_scale2",
+    "output_dir": "outputs/stad_localize_mi_scale2"
+  },
+  "seed": 13,
+  "data": {
+    "source_dir": "dataset/localizeMI_unprocessed",
+    "num_workers": 0,
+    "scales": [2],
+    "split": {
+      "ratios": [0.8, 0.1, 0.1],
+      "seed": 13
+    }
+  },
+  "model": {
+    "mae": {
+      "in_chans": 256,
+      "time_steps": 1280,
+      "patch_size": 16,
+      "embed_dim": 256,
+      "depth": 8,
+      "num_heads": 8,
+      "decoder_embed_dim": 128,
+      "decoder_depth": 4,
+      "decoder_num_heads": 8,
+      "mlp_ratio": 4.0,
+      "norm_pix_loss": false,
+      "pretrained_checkpoint_path": "checkpoints/dreamdiffusion_mae_checkpoint.pth",
+      "pretrained_checkpoint_url": null
+    },
+    "stc": {
+      "patch_size": 16,
+      "time_steps": 1280,
+      "d_model": 256,
+      "depth": 4,
+      "num_heads": 8,
+      "mlp_ratio": 4.0,
+      "position_dim": 3
+    },
+    "mtd": {
+      "sequence_length": 80,
+      "d_model": 256,
+      "num_blocks": 6,
+      "num_heads": 8,
+      "mlp_ratio": 4.0,
+      "conv_kernels": [3, 5, 7, 9],
+      "dropout": 0.0
+    },
+    "diffusion": {
+      "timesteps": 1000,
+      "beta_schedule": "cosine"
+    }
+  },
+  "train": {
+    "device": "cpu",
+    "batch_size": 4,
+    "epochs": 10,
+    "lr": 0.0002,
+    "weight_decay": 0.05,
+    "grad_clip": 1.0,
+    "mae_mask_ratio": 0.75,
+    "freeze_mae": true
+  },
+  "eval": {
+    "batch_size": 4,
+    "sample_steps": 100
+  },
+  "paths": {
+    "mae_checkpoint": "checkpoints/mae_localize_mi.pt",
+    "stad_checkpoint": "checkpoints/stad_localize_mi_scale2.pt"
+  }
+}

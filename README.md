@@ -1,97 +1,129 @@
-<div align="center">
-    <img src="assets/icon.png"/>
-    <h1><code>Pytorch Project Template</code></h1>
-    <p>
-        <img src="https://img.shields.io/github/license/ryul99/pytorch-project-template"/>
-        <a href="https://pycqa.github.io/isort/"><img src="https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336"/></a>
-    </p>
-</div>
+# STAD Training Pipeline
 
-## Feature
+This repository now contains a PyTorch implementation scaffold for **STAD**:
 
-- TensorBoard / [wandb](https://www.wandb.com/) support
-- Background generator is used ([reason of using background generator](https://github.com/IgorSusmelj/pytorch-styleguide/issues/5))
-  - In Windows, background generator could not be supported. So if error occurs, set false to `use_background_generator` in config
-- Training state and network checkpoint saving, loading
-    - Training state includes not only network weights, but also optimizer, step, epoch.
-    - Checkpoint includes only network weights. This could be used for inference. 
-- [Hydra](https://hydra.cc) and [Omegaconf](https://github.com/omry/omegaconf) is supported
-- Distributed Learning using Distributed Data Parallel is supported
-- Config with yaml file / easy dot-style access to config
-- Code lint / CI
-- Code Testing with pytest
+- a DreamDiffusion-style EEG MAE backbone for HR EEG latents,
+- an STC conditioner for LR EEG plus electrode geometry,
+- an MTD latent denoiser trained with a DDPM-style noise-prediction objective,
+- subject-wise Localize-MI loaders built around the bundled `.pt` files in `dataset/localizeMI_unprocessed/`.
 
-## Code Structure
+## Important Data Reality Check
 
-- `assets` dir: icon image of `Pytorch Project Template`. You can remove this directory.
-- `config` dir: directory for config files
-- `dataset` dir: dataloader and dataset codes are here. Also, put dataset in `meta` dir.
-- `model` dir: `model.py` is for wrapping network architecture. `model_arch.py` is for coding network architecture.
-- `tests` dir: directory for `pytest` testing codes. You can check your network's flow of tensor by fixing `tests/model/net_arch_test.py`. 
-Just copy & paste `Net_arch.forward` method to  `net_arch_test.py` and add `assert` phrase to check tensor.
-- `utils` dir:
-    - `train_model.py` and `test_model.py` are for train and test model once.
-    - `utils.py` is for utility. random seed setting, dot-access hyper parameter, get commit hash, etc are here. 
-    - `writer.py` is for writing logs in tensorboard / wandb.
-- `trainer.py` file: this is for setting up and iterating epoch.
+The bundled data already differs from the paper preprocessing:
 
-## Setup
+- `7` subject files are present locally
+- epochs are already saved as tensors of shape `[256, 1280]`
+- metadata reports `256 Hz`, `resampled=True`, `z_score_normalized=True`
+- metadata does **not** record the paper's reported 50/100/150/200 Hz notch chain
 
-### Install requirements
+The code treats these as explicit dataset deviations and writes them into the generated dataset report.
 
-- python3 (3.8, 3.9, 3.10, 3.11 is tested)
-- Write PyTorch version which you want to `requirements.txt`. (https://pytorch.org/get-started/)
-- `pip install -r requirements.txt`
+## Project Layout
 
-### Config
+```text
+configs/
+data/
+models/
+training/
+eval/
+utils/
+trainer.py
+outline.md
+```
 
-- Config is written in yaml file
-    - You can choose configs at `config/default.yaml`. Custom configs are under `config/job/`
-- `name` is train name you run.
-- `working_dir` is root directory for saving checkpoints, logging logs.
-- `device` is device mode for running your model. You can choose `cpu` or `cuda`
-- `data` field
-    - Configs for Dataloader.
-    - glob `train_dir` / `test_dir` with `file_format` for Dataloader.
-    - If `divide_dataset_per_gpu` is true, origin dataset is divide into sub dataset for each gpu. 
-    This could mean the size of origin dataset should be multiple of number of using gpu.
-    If this option is false, dataset is not divided but epoch goes up in multiple of number of gpus.
-- `train`/`test` field
-    - Configs for training options.
-    - `random_seed` is for setting python, numpy, pytorch random seed.
-    - `num_epoch` is for end iteration step of training.
-    - `optimizer` is for selecting optimizer. Only `adam optimizer` is supported for now.
-    - `dist` is for configuring Distributed Data Parallel.
-        - `gpus` is the number that you want to use with DDP (`gpus` value is used at `world_size` in DDP).
-        Not using DDP when `gpus` is 0, using all gpus when `gpus` is -1.
-        - `timeout` is seconds for timeout of process interaction in DDP.
-        When this is set as `~`, default timeout (1800 seconds) is applied in `gloo` mode and timeout is turned off in `nccl` mode.
-- `model` field
-    - Configs for Network architecture and options for model.
-    - You can add configs in yaml format to config your network.
-- `log` field
-    - Configs for logging include tensorboard / wandb logging. 
-    - `summary_interval` and `checkpoint_interval` are interval of step and epoch between training logging and checkpoint saving.
-    - checkpoint and logs are saved under `working_dir/chkpt_dir` and `working_dir/trainer.log`. Tensorboard logs are saving under `working_dir/outputs/tensorboard`
-- `load` field
-    - loading from wandb server is supported
-    - `wandb_load_path` is `Run path` in overview of run. If you don't want to use wandb load, this field should be `~`.
-    - `network_chkpt_path` is path to network checkpoint file.
-    If using wandb loading, this field should be checkpoint file name of wandb run.
-    - `resume_state_path` is path to training state file.
-    If using wandb loading, this field should be training state file name of wandb run.
+## Main Commands
 
-### Code lint
+The files under `configs/` keep the `.yaml` suffix for readability, but they currently use JSON-compatible syntax so the pipeline can run in a minimal Python environment without extra config-parser dependencies.
 
-1. `pip install -r requirements-dev.txt` for install develop dependencies (this requires python 3.6 and above because of black)
+Materialize a dataset report from the bundled subject files:
 
-1. `pre-commit install` for adding pre-commit to git hook
+```bash
+python3 trainer.py preprocess --config configs/stad_localize_mi_scale4.yaml
+```
 
-## Train
+Pretrain the EEG MAE:
 
-- `python trainer.py working_dir=$(pwd)`
+```bash
+python3 trainer.py mae --config configs/stad_localize_mi_scale4.yaml --device cuda
+```
 
-## Inspired by
+Train STAD:
 
-- https://github.com/open-mmlab/mmsr
-- https://github.com/allenai/allennlp (test case writing)
+```bash
+python3 trainer.py stad --config configs/stad_localize_mi_scale4.yaml --device cuda
+```
+
+Evaluate reconstruction:
+
+```bash
+python3 trainer.py eval --config configs/stad_localize_mi_scale4.yaml --device cuda
+```
+
+## DreamDiffusion MAE Weights
+
+The config supports two MAE initialization paths:
+
+1. Local MAE checkpoint at `model.mae.pretrained_checkpoint_path`
+2. Download URL at `model.mae.pretrained_checkpoint_url`
+
+If the file path is missing and a URL is provided, the code will download the checkpoint before loading it.
+
+The default configs point to:
+
+```text
+checkpoints/dreamdiffusion_mae_checkpoint.pth
+```
+
+Set the URL once you have the official DreamDiffusion checkpoint location you want to use.
+
+## Notes On Faithfulness
+
+This implementation follows the STAD paper at the module level, but a few choices remain assumptions because the paper and bundled data leave gaps:
+
+- LR montages are generated deterministically from 256-channel coordinates with nested farthest-point subsampling.
+- The bundled data is already preprocessed, so the raw filtering/epoching stage cannot be reproduced from recordings here.
+- STC aggregates channel-wise temporal features into time-aligned condition tokens instead of keeping a full channel-time token grid.
+- The MAE interface is intentionally ViT-MAE-like so official DreamDiffusion checkpoints have a workable loading path.
+
+## Smoke Test
+
+```bash
+pytest -q
+```
+
+## Docker
+
+Build and run everything from a sourceable shell helper:
+
+```bash
+source env.sh
+```
+
+By default, `source env.sh` now launches an interactive shell inside the Docker container.
+
+If you only want to load the helper functions into your host shell without entering Docker immediately:
+
+```bash
+source env.sh --no-shell
+stad_doctor
+stad_build
+stad_shell
+```
+
+Useful commands after `source env.sh`:
+
+```bash
+stad_preprocess --config configs/stad_localize_mi_scale4.yaml
+stad_train_mae --config configs/stad_localize_mi_scale4.yaml --device cpu
+stad_train_stad --config configs/stad_localize_mi_scale4.yaml --device cpu
+stad_eval --config configs/stad_localize_mi_scale4.yaml --device cpu
+stad_test
+```
+
+Notes:
+
+- The image installs both `requirements.txt` and `requirements-dev.txt`.
+- The repo is bind-mounted into `/workspace`, so local datasets and checkpoints stay on the host.
+- `stad_doctor` checks whether the Docker CLI and daemon are reachable before you try to build or run anything.
+- The container startup now creates a named user matching your host UID/GID, so you should no longer see the shell prompt as `I have no name!`.
+- To request GPU access on a Linux/NVIDIA machine, set `export STAD_DOCKER_GPU=1` before running `stad_run` or the helper commands.

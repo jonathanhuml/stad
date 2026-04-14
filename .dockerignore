@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+.pytest_cache
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pt
+checkpoints
+dataset
+outputs
+wandb
+
